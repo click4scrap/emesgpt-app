@@ -12,7 +12,7 @@ from youtube_transcript_api._errors import (
     TranscriptsDisabled,
     VideoUnavailable,
 )
-
+# redeploy
 from knowledge import SYSTEM_PROMPT, build_context_block
 import teachings as teachings_store
 from runtime_paths import get_base_dir
