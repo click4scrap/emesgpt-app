@@ -516,6 +516,30 @@ const el = document.getElementById('typing-indicator');
 if (el) el.remove();
 }
 
+// Live-streaming bubble: created once the first delta arrives, then its
+// innerHTML is updated in place as more text streams in (re-parsing the
+// growing markdown each time — cheap at chat-message length). Kept outside
+// of renderAll()/the conversation array until the stream finishes, at
+// which point sendMessage() pushes the final text into `conversation` and
+// a normal renderAll() takes over, swapping this DOM node for the
+// properly-rendered final one.
+function renderStreamingMessage() {
+const wrap = document.createElement('div');
+wrap.className = 'msg assistant';
+wrap.id = 'streaming-message';
+const bubble = document.createElement('div');
+bubble.className = 'bubble';
+wrap.appendChild(bubble);
+chatScroll.appendChild(wrap);
+scrollToBottom();
+return bubble;
+}
+
+function removeStreamingMessage() {
+const el = document.getElementById('streaming-message');
+if (el) el.remove();
+}
+
 function updateCharCount() {
 const len = inputText.value.length;
 charCountEl.textContent = `${len.toLocaleString()} / ${MAX_CHARS.toLocaleString()} chars`;
@@ -600,27 +624,92 @@ renderTyping();
 // visible in the UI regardless.
 const windowed = conversation.slice(-CONTEXT_WINDOW);
 
+let streamBubble = null;
+let accumulated = '';
+
 try {
 const res = await fetch('/api/chat', {
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify({ messages: windowed.map(({ role, content }) => ({ role, content })) }),
 });
-const data = await res.json();
-removeTyping();
+
 if (!res.ok) {
-// Don't keep a user turn in history that the server rejected/couldn't answer.
+// Validation-type failures (bad input, usage limit, etc.) come back as a
+// normal JSON error response — the stream never started.
+removeTyping();
+const data = await res.json().catch(() => ({}));
 conversation.pop();
 saveConversation();
 renderAll();
 if (data.usage) { usage = data.usage; renderUsage(); }
 throw new Error(data.error || 'Something went wrong.');
 }
-conversation.push({ role: 'assistant', content: data.reply, meta: data.source_note || null });
+
+// The reply streams back as newline-delimited JSON: one small object per
+// line, each either {"delta": "..."}, {"error": "..."}, or the final
+// {"done": true, source_note, usage}. Read it chunk by chunk and grow the
+// on-screen bubble live instead of waiting for the whole thing.
+const reader = res.body.getReader();
+const decoder = new TextDecoder();
+let buffer = '';
+let finalData = null;
+let streamError = null;
+
+const handleLine = (line) => {
+if (!line.trim()) return;
+let obj;
+try { obj = JSON.parse(line); } catch { return; }
+if (obj.delta) {
+if (!streamBubble) {
+removeTyping();
+streamBubble = renderStreamingMessage();
+}
+accumulated += obj.delta;
+streamBubble.innerHTML = marked.parse(accumulated);
+scrollToBottom();
+} else if (obj.error) {
+streamError = obj.error;
+} else if (obj.done) {
+finalData = obj;
+}
+};
+
+while (true) {
+const { done, value } = await reader.read();
+if (done) break;
+buffer += decoder.decode(value, { stream: true });
+const lines = buffer.split('\n');
+buffer = lines.pop(); // last element may be a partial line — keep buffering it
+lines.forEach(handleLine);
+}
+if (buffer) handleLine(buffer);
+
+removeTyping();
+
+if (streamError) {
+removeStreamingMessage();
+conversation.pop();
 saveConversation();
 renderAll();
-if (data.usage) { usage = data.usage; renderUsage(); }
+throw new Error(streamError);
+}
+
+if (!accumulated) {
+removeStreamingMessage();
+conversation.pop();
+saveConversation();
+renderAll();
+throw new Error('No response received.');
+}
+
+conversation.push({ role: 'assistant', content: accumulated, meta: (finalData && finalData.source_note) || null });
+saveConversation();
+removeStreamingMessage();
+renderAll();
+if (finalData && finalData.usage) { usage = finalData.usage; renderUsage(); }
 } catch (err) {
+removeTyping();
 setStatus(err.message);
 } finally {
 setLoading(false);
