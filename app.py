@@ -89,6 +89,20 @@ def limit_reached_response():
     )
 
 
+NO_MATERIAL_INSTRUCTION = (
+    "\n\n--- NO MATERIAL FOUND FOR THIS QUESTION ---\n\n"
+    "You have nothing specific written on this exact topic anywhere in your knowledge "
+    "base. Do NOT answer it anyway using your usual voice and metaphors as if you had "
+    "spoken on this before — that would not be honest, even if it sounds plausible. "
+    "Instead, respond warmly but briefly: tell them honestly that you don't have a "
+    "real answer for this one yet, and that you'd be happy to look into it. Their "
+    "question has already been saved for a future update. Something close to: "
+    "\"I don't know — but I'd be happy to look into that for you. I've saved your "
+    "question, so next time you visit I may have a real answer.\" Do not follow that "
+    "with a fabricated teaching, story, or metaphor."
+)
+
+
 def build_system_content(query: str = ""):
     """Rebuilt on every call (cheap: string concat + one small file read) so
     that answers saved through the teaching wizard take effect immediately,
@@ -97,7 +111,16 @@ def build_system_content(query: str = ""):
     `query` is the user's actual message — it's used to pull only the
     knowledge-base chunks relevant to this specific question (see
     knowledge.select_relevant_chunks) instead of sending the entire
-    knowledge base (curated pieces + the master doc) on every request."""
+    knowledge base (curated pieces + the master doc) on every request.
+
+    When nothing relevant is found, two things happen instead of silently
+    letting the model improvise a plausible-sounding but ungrounded answer:
+    the question gets logged via teachings_store.log_unanswered_question so
+    it shows up in the /teach wizard for a real answer later, and a strong,
+    late-positioned instruction is appended telling the model to say so
+    honestly rather than freelancing in Rabbi Pollen's voice on a topic he
+    hasn't actually addressed. It's appended last (after the teachings
+    block) because later instructions tend to carry more weight."""
     parts = [SYSTEM_PROMPT]
     context = build_context_block(query)
     if context:
@@ -108,6 +131,9 @@ def build_system_content(query: str = ""):
     teachings_block = teachings_store.build_teachings_block()
     if teachings_block:
         parts.append("\n\n" + teachings_block)
+    if not context and query.strip():
+        teachings_store.log_unanswered_question(query)
+        parts.append(NO_MATERIAL_INSTRUCTION)
     return "".join(parts)
 
 
