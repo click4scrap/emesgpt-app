@@ -25,9 +25,14 @@ load_dotenv(os.path.join(get_base_dir(), ".env"))
 
 app = Flask(__name__)
 
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-GROQ_API_URL = os.environ.get("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions")
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+
+url = "https://api.deepseek.com/chat/completions"
+headers = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}"}
+data = {
+    "model": "deepseek-chat",
+    "messages": messages,  # this variable should already exist
+    "max_tokens": 2000
+}
 @app.route('/')
 def home():
     return render_template('index.html')
@@ -184,7 +189,7 @@ def resolve_user_text(text: str):
 
 def call_groq(messages: list):
     """messages already includes the system message. Returns (content, error_response_tuple)."""
-    if not GROQ_API_KEY:
+    if not DEEPSEEK_API_KEY:
         return None, ({"error": "GROQ_API_KEY is not set on the server. See README for setup."}, 500)
 
     payload = {
