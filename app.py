@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import threading
@@ -5,7 +6,7 @@ import time
 
 import requests
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request, stream_with_context
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import (
     NoTranscriptFound,
@@ -250,6 +251,71 @@ def call_deepseek(messages: list):
         return None, ({"error": "Unexpected response shape from DeepSeek."}, 502)
 
 
+def call_deepseek_stream(messages: list):
+    """Generator variant of call_deepseek used for the perceived-speed
+    typewriter effect in the main chat UI: DeepSeek is an OpenAI-compatible
+    API, so `stream: True` gets back a Server-Sent-Events response — a
+    sequence of `data: {...}` lines, each carrying one small delta of the
+    reply, terminated by a literal `data: [DONE]` line. This yields just the
+    text deltas (str chunks) as they arrive.
+
+    Raises RuntimeError on any failure — connection problems, a non-2xx
+    response, or a malformed final payload. Because this is a generator,
+    none of the function body actually runs until the caller starts
+    iterating it, so callers should be prepared to catch RuntimeError from
+    the *first* iteration, not just the call site."""
+    if not DEEPSEEK_API_KEY:
+        raise RuntimeError("DEEPSEEK_API_KEY is not set on the server. See README for setup.")
+
+    payload = {
+        "model": DEEPSEEK_MODEL,
+        "messages": messages,
+        "temperature": 0.7,
+        "stream": True,
+    }
+
+    try:
+        resp = requests.post(
+            DEEPSEEK_API_URL,
+            headers={
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=90,
+            stream=True,
+        )
+        resp.raise_for_status()
+    except requests.exceptions.HTTPError:
+        raise RuntimeError(f"DeepSeek API error ({resp.status_code}): {resp.text[:500]}")
+    except requests.exceptions.RequestException as exc:
+        raise RuntimeError(f"Couldn't reach DeepSeek API: {exc}")
+
+    got_any_content = False
+    for line in resp.iter_lines(decode_unicode=True):
+        if not line:
+            continue  # SSE keep-alive / event-boundary blank line
+        if not line.startswith("data:"):
+            continue
+        data = line[len("data:"):].strip()
+        if data == "[DONE]":
+            break
+        try:
+            chunk = json.loads(data)
+        except json.JSONDecodeError:
+            continue
+        choices = chunk.get("choices") or []
+        if not choices:
+            continue
+        content = (choices[0].get("delta") or {}).get("content")
+        if content:
+            got_any_content = True
+            yield content
+
+    if not got_any_content:
+        raise RuntimeError("DeepSeek returned an empty response.")
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -409,7 +475,23 @@ def chat():
     """Conversational endpoint. The client sends the full running history
     (list of {role: 'user'|'assistant', content}); the server prepends the
     system prompt + knowledge base and forwards everything to DeepSeek so it
-    has full context, same as talking to DeepSeek directly."""
+    has full context, same as talking to DeepSeek directly.
+
+    Streams the reply back as newline-delimited JSON (one small JSON object
+    per line) instead of waiting for the whole answer and sending it in one
+    shot — this is what lets the UI show the reply typing itself out live,
+    which reads as faster even though total generation time is the same.
+    Each line is one of:
+      {"delta": "..."}                                   — a chunk of reply text
+      {"error": "..."}                                    — something went wrong mid-stream
+      {"done": true, "source_note": ..., "usage": {...}}  — stream finished successfully
+    All validation that can be checked up front (bad input, usage limit,
+    etc.) still happens before any streaming starts, so those cases return
+    normal JSON error responses with proper HTTP status codes exactly like
+    before. Only errors that occur *during* the DeepSeek call itself have to
+    be reported as an {"error": ...} line inside an already-started 200
+    response, since HTTP doesn't allow changing the status code after the
+    body has begun streaming."""
     data = request.get_json(force=True) or {}
     history = data.get("messages")
 
@@ -449,13 +531,19 @@ def chat():
         body, status = limit_reached_response()
         return jsonify(body), status
 
-    reply, err = call_deepseek([{"role": "system", "content": build_system_content(resolved_text)}] + outgoing)
-    if err:
-        body, status = err
-        return jsonify(body), status
+    full_messages = [{"role": "system", "content": build_system_content(resolved_text)}] + outgoing
 
-    usage_now = increment_usage()
-    return jsonify({"reply": reply, "source_note": source_note, "usage": usage_now})
+    def generate():
+        try:
+            for piece in call_deepseek_stream(full_messages):
+                yield json.dumps({"delta": piece}) + "\n"
+        except RuntimeError as exc:
+            yield json.dumps({"error": str(exc)}) + "\n"
+            return
+        usage_now = increment_usage()
+        yield json.dumps({"done": True, "source_note": source_note, "usage": usage_now}) + "\n"
+
+    return Response(stream_with_context(generate()), mimetype="application/x-ndjson")
 
 
 @app.route("/test")
