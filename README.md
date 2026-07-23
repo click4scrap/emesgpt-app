@@ -225,4 +225,4 @@ this process; it's all done through a web browser.
   a lot; the primary cost control is the 10-message window above.
 - This is an MVP: no auth, no rate limiting, no persistence. Don't deploy it
   publicly as-is with your API key exposed — put it behind login and a reverse
-  proxy first, and consider a request cap per user.
+  proxy first, and consider a request cap per user. 
