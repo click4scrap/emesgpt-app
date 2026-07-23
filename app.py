@@ -427,6 +427,7 @@ def chat():
     usage_now = increment_usage()
     return jsonify({"reply": reply, "source_note": source_note, "usage": usage_now})
 @app.route("/test")
+
 def test():
     return "EmesGPT is running!"
 
