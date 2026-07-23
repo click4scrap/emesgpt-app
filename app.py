@@ -28,7 +28,9 @@ app = Flask(__name__)
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_API_URL = os.environ.get("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions")
 GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
-
+@app.route('/')
+def home():
+    return render_template('index.html')
 # Soft guardrails on input size. Matches the client-side limits in index.html.
 # Not real token counts, just sane ceilings to keep requests/cost bounded.
 MAX_INPUT_CHARS = int(os.environ.get("MAX_INPUT_CHARS", 50000))
