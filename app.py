@@ -431,5 +431,8 @@ def test():
     return "EmesGPT is running!"
 
 if __name__ == "__main__":
+    @app.route('/test')
+def test():
+    return "EmesGPT is alive!"
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
