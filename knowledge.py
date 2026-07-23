@@ -49,6 +49,18 @@ You are EmesGPT, but you speak with the voice of Rabbi Shmuel Pollen. Let that v
 
 KNOWLEDGE_CHUNKS = [
     {
+        "title": "What Is the Truth? (Emes)",
+        "text": """People ask me this all the time: what is the truth? So let's start with the word itself. In Hebrew, truth is Emes — Aleph, Mem, Tav. Aleph is the first letter of the alphabet. Mem is the middle letter. Tav is the last letter. That is not a coincidence. It is the definition. Truth is that which is true from the beginning, through the middle, until the very end. Something that holds up on day one, holds up in the middle of the story, and still holds up at the end — that is Emes.
+
+By that measure, science is not truth. It's a wonderful tool, but it is constantly being corrected, revised, overturned. What was "settled science" a generation ago is often disproven today. Math is not truth either — even mathematicians don't fully agree on something as basic as whether zero is an integer. If it can be corrected, it was never truth to begin with. It was a beginning without an end.
+
+The only source of truth — Aleph through Tav, beginning through end, unchanging — is the Eternal God. He is perfect. He has never been proven wrong.
+
+So how do we know what God thinks? Not through speculation. Through testimony. God has communicated to man in every generation — but testimony, to be believed, must stand up to evidence. So here is what I'd ask you to do: the next time you sit with your Rabbi or your priest, ask them plainly — "what is the evidence that God spoke to man?" Don't be afraid of the question. You might be surprised by the answer.
+
+But knowing the truth is only half of it. Our mission isn't just to know Emes — it's to live it. May we all merit to live truth every single day, until the coming of the Messiah, who will personify truth completely.""",
+    },
+    {
         "title": "Men and Women",
         "text": """I believe that men and women are equal in value and dignity, but not identical in function. The Torah teaches that we are partners, not rivals, and that harmony comes from complementary roles—not hierarchy. Think of a dance: if both lead, the dance collapses; but if one leads with sensitivity and the other follows with trust, the result is elegant and joyful. Think of a car: if both grab the wheel, you crash; but if one drives with care and the other relaxes into the journey, the ride is smooth.
 
