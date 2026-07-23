@@ -24,16 +24,16 @@ load_dotenv(os.path.join(get_base_dir(), ".env"))
 
 app = Flask(__name__)
 
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-GROQ_API_URL = os.environ.get("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions")
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+DEEPSEEK_API_URL = os.environ.get("DEEPSEEK_API_URL", "https://api.deepseek.com/chat/completions")
+DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
 
 # Soft guardrails on input size. Matches the client-side limits in index.html.
 # Not real token counts, just sane ceilings to keep requests/cost bounded.
 MAX_INPUT_CHARS = int(os.environ.get("MAX_INPUT_CHARS", 50000))
 MAX_CONVERSATION_CHARS = int(os.environ.get("MAX_CONVERSATION_CHARS", 150000))
 
-# Hard cap on Groq calls (via /api/chat + /api/analyze) for this run of
+# Hard cap on DeepSeek calls (via /api/chat + /api/analyze) for this run of
 # the server. Deliberately in-memory, not written to disk: it's meant to
 # reset whenever the server restarts, and a "Reset" button in the UI can
 # also zero it out early. This is a global counter shared by every browser
@@ -180,13 +180,13 @@ def resolve_user_text(text: str):
     return text, None, None
 
 
-def call_groq(messages: list):
+def call_deepseek(messages: list):
     """messages already includes the system message. Returns (content, error_response_tuple)."""
-    if not GROQ_API_KEY:
-        return None, ({"error": "GROQ_API_KEY is not set on the server. See README for setup."}, 500)
+    if not DEEPSEEK_API_KEY:
+        return None, ({"error": "DEEPSEEK_API_KEY is not set on the server. See README for setup."}, 500)
 
     payload = {
-        "model": GROQ_MODEL,
+        "model": DEEPSEEK_MODEL,
         "messages": messages,
         "temperature": 0.7,
         "stream": False,
@@ -194,9 +194,9 @@ def call_groq(messages: list):
 
     try:
         resp = requests.post(
-            GROQ_API_URL,
+            DEEPSEEK_API_URL,
             headers={
-                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
                 "Content-Type": "application/json",
             },
             json=payload,
@@ -204,15 +204,15 @@ def call_groq(messages: list):
         )
         resp.raise_for_status()
     except requests.exceptions.HTTPError:
-        return None, ({"error": f"Groq API error ({resp.status_code}): {resp.text[:500]}"}, 502)
+        return None, ({"error": f"DeepSeek API error ({resp.status_code}): {resp.text[:500]}"}, 502)
     except requests.exceptions.RequestException as exc:
-        return None, ({"error": f"Couldn't reach Groq API: {exc}"}, 502)
+        return None, ({"error": f"Couldn't reach DeepSeek API: {exc}"}, 502)
 
     result = resp.json()
     try:
         return result["choices"][0]["message"]["content"], None
     except (KeyError, IndexError):
-        return None, ({"error": "Unexpected response shape from Groq."}, 502)
+        return None, ({"error": "Unexpected response shape from DeepSeek."}, 502)
 
 
 @app.route("/")
@@ -310,7 +310,7 @@ def teach_suggest_followup():
         },
         {"role": "user", "content": f"Question: {question}\nAnswer: {answer}"},
     ]
-    suggestion, err = call_groq(prompt_messages)
+    suggestion, err = call_deepseek(prompt_messages)
     if err:
         body, status = err
         return jsonify(body), status
@@ -355,7 +355,7 @@ def analyze():
         body, status = limit_reached_response()
         return jsonify(body), status
 
-    analysis, err = call_groq(
+    analysis, err = call_deepseek(
         [
             {"role": "system", "content": build_system_content()},
             {"role": "user", "content": text},
@@ -373,8 +373,8 @@ def analyze():
 def chat():
     """Conversational endpoint. The client sends the full running history
     (list of {role: 'user'|'assistant', content}); the server prepends the
-    system prompt + knowledge base and forwards everything to Groq so it
-    has full context, same as talking to Groq directly."""
+    system prompt + knowledge base and forwards everything to DeepSeek so it
+    has full context, same as talking to DeepSeek directly."""
     data = request.get_json(force=True) or {}
     history = data.get("messages")
 
@@ -394,7 +394,7 @@ def chat():
         body, status = err
         return jsonify(body), status
 
-    # Only the outgoing copy sent to Groq gets the YouTube link swapped
+    # Only the outgoing copy sent to DeepSeek gets the YouTube link swapped
     # for its transcript — the client keeps the original link in its own
     # copy of the history, so the chat log still shows what the user typed.
     outgoing = history[:-1] + [{"role": "user", "content": resolved_text}]
@@ -414,7 +414,7 @@ def chat():
         body, status = limit_reached_response()
         return jsonify(body), status
 
-    reply, err = call_groq([{"role": "system", "content": build_system_content()}] + outgoing)
+    reply, err = call_deepseek([{"role": "system", "content": build_system_content()}] + outgoing)
     if err:
         body, status = err
         return jsonify(body), status
