@@ -10,6 +10,7 @@ reason about and test on its own.
 
 import json
 import os
+import re
 import threading
 from datetime import datetime, timezone
 
@@ -162,3 +163,61 @@ def build_teachings_block():
     for entry in answered:
         parts.append(f"Q: {entry['question']}\nA: {entry['answer']}")
     return "\n\n".join(parts)
+
+
+def _normalize_question(text: str) -> str:
+    """Dedup key for questions: lowercase, strip punctuation, collapse
+    whitespace. Without stripping punctuation, "what is truth" and "What is
+    truth?" would be treated as two different questions and both show up
+    in the wizard — punctuation is exactly where real visitor phrasing
+    varies most, so it has to be ignored for matching purposes."""
+    text = (text or "").strip().lower()
+    text = re.sub(r"[^a-z0-9\s]", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def log_unanswered_question(question_text: str):
+    """Record a real visitor question that EmesGPT had no source material
+    for, so it shows up in the /teach wizard (as just another entry with an
+    empty answer) for the user to answer later. Once answered there through
+    the normal /api/teach/save flow, it flows into build_teachings_block()
+    like any other teaching and future visitors get a real answer.
+
+    Deduped by normalized question text — if the same (or near-identical,
+    modulo whitespace/case) question has already been logged, this just
+    bumps its asked_count and timestamp instead of creating a duplicate
+    entry, so a popular question doesn't flood the wizard with copies.
+
+    No-ops on blank/whitespace-only input.
+    """
+    question_text = (question_text or "").strip()
+    if not question_text:
+        return
+
+    normalized = _normalize_question(question_text)
+
+    with _lock:
+        data = load_teachings()
+        entries = data["entries"]
+        existing = next(
+            (e for e in entries if _normalize_question(e.get("question", "")) == normalized),
+            None,
+        )
+        if existing:
+            existing["asked_count"] = existing.get("asked_count", 1) + 1
+            existing["last_asked_at"] = _now_iso()
+        else:
+            slug = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")[:40]
+            entries.append(
+                {
+                    "id": f"visitor-{slug or 'question'}-{int(datetime.now(timezone.utc).timestamp())}",
+                    "question": question_text,
+                    "answer": "",
+                    "source": "visitor-asked",
+                    "asked_count": 1,
+                    "last_asked_at": _now_iso(),
+                    "updated_at": _now_iso(),
+                }
+            )
+        _write_teachings(data)
+        return data
