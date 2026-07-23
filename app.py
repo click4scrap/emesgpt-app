@@ -23,8 +23,7 @@ from runtime_paths import get_base_dir
 # app/exe instead of hoping cwd lines up.
 load_dotenv(os.path.join(get_base_dir(), ".env"))
 
-app = Flask(__name__)
-
+app = Flask(__name__, template_folder='templates')
 
 url = "https://api.deepseek.com/chat/completions"
 headers = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}"}
