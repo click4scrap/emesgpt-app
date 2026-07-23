@@ -198,16 +198,13 @@ def call_groq(messages: list):
         "temperature": 0.7,
         "stream": False,
     }
-
     try:
         resp = requests.post(
-            GROQ_API_URL,
+            "https://api.deepseek.com/chat/completions",
             headers={
-                "Authorization": f"Bearer {GROQ_API_KEY}",
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
                 "Content-Type": "application/json",
             },
-            json=payload,
-            timeout=90,
         )
         resp.raise_for_status()
     except requests.exceptions.HTTPError:
