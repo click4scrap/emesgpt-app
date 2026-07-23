@@ -12,7 +12,6 @@ from youtube_transcript_api._errors import (
     TranscriptsDisabled,
     VideoUnavailable,
 )
-# redeploy
 from knowledge import SYSTEM_PROMPT, build_context_block
 import teachings as teachings_store
 from runtime_paths import get_base_dir
@@ -23,20 +22,12 @@ from runtime_paths import get_base_dir
 # app/exe instead of hoping cwd lines up.
 load_dotenv(os.path.join(get_base_dir(), ".env"))
 
-app = Flask(__name__, template_folder='templates')
-@app.route('/')
-def home():
-    return render_template('index.html')
-url = "https://api.deepseek.com/chat/completions"
-headers = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}"}
-data = {
-    "model": "deepseek-chat",
-    "messages": messages,  # this variable should already exist
-    "max_tokens": 2000
-}
-@app.route('/')
-def home():
-    return render_template('index.html')
+app = Flask(__name__)
+
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GROQ_API_URL = os.environ.get("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+
 # Soft guardrails on input size. Matches the client-side limits in index.html.
 # Not real token counts, just sane ceilings to keep requests/cost bounded.
 MAX_INPUT_CHARS = int(os.environ.get("MAX_INPUT_CHARS", 50000))
@@ -111,6 +102,7 @@ def build_system_content():
     if teachings_block:
         parts.append("\n\n" + teachings_block)
     return "".join(parts)
+
 
 YOUTUBE_ID_PATTERNS = [
     r"(?:v=|\/)([0-9A-Za-z_-]{11}).*",
@@ -190,7 +182,7 @@ def resolve_user_text(text: str):
 
 def call_groq(messages: list):
     """messages already includes the system message. Returns (content, error_response_tuple)."""
-    if not DEEPSEEK_API_KEY:
+    if not GROQ_API_KEY:
         return None, ({"error": "GROQ_API_KEY is not set on the server. See README for setup."}, 500)
 
     payload = {
@@ -199,13 +191,16 @@ def call_groq(messages: list):
         "temperature": 0.7,
         "stream": False,
     }
+
     try:
         resp = requests.post(
-            "https://api.deepseek.com/chat/completions",
+            GROQ_API_URL,
             headers={
-                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Authorization": f"Bearer {GROQ_API_KEY}",
                 "Content-Type": "application/json",
             },
+            json=payload,
+            timeout=90,
         )
         resp.raise_for_status()
     except requests.exceptions.HTTPError:
@@ -426,14 +421,13 @@ def chat():
 
     usage_now = increment_usage()
     return jsonify({"reply": reply, "source_note": source_note, "usage": usage_now})
-@app.route("/test")
 
+
+@app.route("/test")
 def test():
     return "EmesGPT is running!"
 
+
 if __name__ == "__main__":
-    @app.route('/test')
-def test():
-    return "EmesGPT is alive!"
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
