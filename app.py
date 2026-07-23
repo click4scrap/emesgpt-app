@@ -89,15 +89,22 @@ def limit_reached_response():
     )
 
 
-def build_system_content():
+def build_system_content(query: str = ""):
     """Rebuilt on every call (cheap: string concat + one small file read) so
     that answers saved through the teaching wizard take effect immediately,
-    with no server restart needed."""
+    with no server restart needed.
+
+    `query` is the user's actual message — it's used to pull only the
+    knowledge-base chunks relevant to this specific question (see
+    knowledge.select_relevant_chunks) instead of sending the entire
+    knowledge base (curated pieces + the master doc) on every request."""
     parts = [SYSTEM_PROMPT]
-    parts.append(
-        "\n\n--- BACKGROUND WISDOM (use as a moral lens, not proof texts; "
-        "cite only when genuinely relevant) ---\n\n" + build_context_block()
-    )
+    context = build_context_block(query)
+    if context:
+        parts.append(
+            "\n\n--- BACKGROUND WISDOM (use as a moral lens, not proof texts; "
+            "cite only when genuinely relevant) ---\n\n" + context
+        )
     teachings_block = teachings_store.build_teachings_block()
     if teachings_block:
         parts.append("\n\n" + teachings_block)
@@ -357,7 +364,7 @@ def analyze():
 
     analysis, err = call_deepseek(
         [
-            {"role": "system", "content": build_system_content()},
+            {"role": "system", "content": build_system_content(text)},
             {"role": "user", "content": text},
         ]
     )
@@ -414,7 +421,7 @@ def chat():
         body, status = limit_reached_response()
         return jsonify(body), status
 
-    reply, err = call_deepseek([{"role": "system", "content": build_system_content()}] + outgoing)
+    reply, err = call_deepseek([{"role": "system", "content": build_system_content(resolved_text)}] + outgoing)
     if err:
         body, status = err
         return jsonify(body), status
