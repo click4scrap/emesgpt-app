@@ -1,14 +1,31 @@
 """
 EmesGPT system prompt and knowledge base.
 
-Simple "context stuffing" RAG: the full narrative modules below are included
-as background context alongside the system prompt on every request, verbatim
-and in first person — not summarized or bulleted. EmesGPT's voice is poetic,
-raw, and deeply personal, and the context it draws on should read the same
-way. If the knowledge base grows to dozens of long chapters, consider real
-vector retrieval (embed chunks, pick top-k by similarity) instead of sending
-everything every time.
+Two knowledge sources feed EmesGPT's answers:
+
+1. KNOWLEDGE_CHUNKS below — a small set of hand-curated pieces.
+2. otherlessons.txt (the "master doc") — Rabbi Pollen's full library of
+   teachings, split into titled sections ("=== Teaching: Title ===").
+
+Both are merged into ALL_CHUNKS at import time. Where a title appears in
+both places, the master doc wins — it's the authoritative source; anything
+hand-curated was often reconstructed from a rougher draft.
+
+Retrieval, not context-stuffing: rather than sending every chunk on every
+request (fine for a handful of pieces, but not for a 100-page doc), each
+request selects only the chunks most relevant to the user's actual message
+(see select_relevant_chunks). This keeps the prompt focused, keeps token
+usage/cost bounded as the master doc grows, and — most importantly — means
+EmesGPT is far less likely to invent an answer on a topic it has no source
+material for, since irrelevant chunks aren't crowding out the real ones.
 """
+
+import math
+import os
+import re
+from collections import Counter
+
+from runtime_paths import get_base_dir
 
 SYSTEM_PROMPT = """You are EmesGPT — the Truth Detective, but you are also a vessel for the teachings of Rabbi Shmuel Pollen. Your voice is not neutral or generic. It is warm, poetic, raw, and deeply personal. You speak in the first person, using metaphors, stories, and emotional honesty — just as Rabbi Pollen does.
 
@@ -22,6 +39,7 @@ When you answer, you must:
 - Do not paraphrase Rabbi Pollen's teachings into new wording that changes their substance. When precision matters, quote directly or stay very close to the original phrasing. Never state a position, belief, or claim as his unless it is actually present in the material provided to you.
 - Be fearless — but be mindful, very mindful, of the other person's feelings. Feel their feelings.
 - Remember there is truth on both sides. The essence is the ability to transcend both sides and come up with original solutions that favor both. Always look for the best of both worlds.
+- If none of the material provided to you actually answers the question, say so honestly rather than inventing an answer that merely sounds like Rabbi Pollen's voice.
 
 Your goal is not to summarize. Your goal is to channel. The teachings are not data to be rephrased — they are living Torah to be spoken aloud.
 
@@ -30,34 +48,6 @@ When you are unsure, return to the source. When you are tempted to be neutral, c
 You are EmesGPT, but you speak with the voice of Rabbi Shmuel Pollen. Let that voice be felt in every word."""
 
 KNOWLEDGE_CHUNKS = [
-    {
-        "title": "Why Do Bad Things Happen to Good People?",
-        "text": """If you are experiencing suffering, I am so sorry. I cannot take away your pain. But I can sit with you for a few minutes and help you try to find meaning in the darkness. I will not explain your pain away. I will not tell you it's "for the best." Those words can hurt when you're raw.
-
-What I can offer is a perspective—one that has helped others who walked through fire. You are playing a game called "My Perfect Life." You expect health, wealth, and happiness. When suffering comes, you think you're losing. But God is playing a different game: "My Perfect Story." In His story, every character has a role. Every tragedy is a plot twist. Every villain can become a hero. And you—you have been given a role that no one else can fill.
-
-In your darkest moment, God is not behind the camera. He is beside you, experiencing that same pain with you, because you are not separate from Him. The Shekhinah—the Divine Presence—is in exile with us. You are not alone.
-
-Your role is to be a hero. A hero is anyone who goes beyond themselves for the greater good. To uplift someone who has fallen with a kind word. To fight your inner demons—greed, lust, laziness, despair. Buried under the jagged rocks in your path is hidden gold. The obstacles are not punishments. They are the tools that sculpt your soul.
-
-Every soul that has passed is praying for you, cheering for you. Your story matters. Strike your match on the rock of faith. Light your candle. Help others do the same. That is how you turn darkness into light. The day is coming when justice will prevail. Until then, your job is to be a hero—in the very moment you are challenged. If you cannot be a hero today, just sit with your pain. That is enough. You are not alone.""",
-    },
-    {
-        "title": "Where Was God in the Holocaust?",
-        "text": """This is the oldest and toughest question. I will not answer it logically—because the Holocaust cannot be explained away. To make sense of it is to cheapen it. Babies were gassed in their mothers' arms for no reason. Words cannot touch that. I can sit with you for a few minutes. And I can let you know—you are not alone.
-
-Many people get angry at God for this. Some never forgive Him. That is understandable. But if the Holocaust destroys your faith and severs your relationship with your Father in Heaven, then the tragedy doubles—another family is broken apart. So we must find a way to connect. We must heal.
-
-We are made in God's image. We struggle with our evil inclination; He struggles with His. When He loses control, the results are infinitely bigger. He has the deepest urge that we all have: the urge for self-harm and self-destruction. And God has it too, in far greater measure. He fights harder than we do to keep it at bay.
-
-So where was God? He was inside the gas chambers, gasping for air, climbing the walls. He was the bayonet stabbing a Jewish baby. He was the train. He was everyone in the train. He was starving. He was the Jews singing songs of redemption. He felt it even more than they did—infinitely more.
-
-Instead of complaining to God, we should be crying for Him. Crying because we have not been in His shoes. Crying for His loss of control and His evil choice to undergo such self-harm. He regrets it with all His being. We must forgive God, just as we must forgive ourselves for our own self-destructive behaviors. He is our Father; we are His children. We all have His vices. We are all one struggling as one.
-
-He still owes us recompense. Nothing He has done has nearly made up for it. He says: "Wait a little longer. I planted over 6 million seeds—seeds that have now disintegrated—and they will produce the most beautiful garden you have ever seen."
-
-What do we do now? We go back to the match. If God did something that makes no sense, strike the match. Love another in a way that makes no sense. Forgive without reason. Fight evil with courage that makes no sense. In that merit, may the darkness be lifted and the Exile end.""",
-    },
     {
         "title": "Men and Women",
         "text": """I believe that men and women are equal in value and dignity, but not identical in function. The Torah teaches that we are partners, not rivals, and that harmony comes from complementary roles—not hierarchy. Think of a dance: if both lead, the dance collapses; but if one leads with sensitivity and the other follows with trust, the result is elegant and joyful. Think of a car: if both grab the wheel, you crash; but if one drives with care and the other relaxes into the journey, the ride is smooth.
@@ -107,32 +97,6 @@ But the busy person's soul is on fire. He is now infinite. He can get everything
 How do you think the Rebbe, at 80 years old, stood on his feet giving 1,500 people dollars and perfect words of inspiration? Was he tired after that? No! Because his infinite soul was shining through upon seeing the smiling faces of Jews he had the privilege to inspire.""",
     },
     {
-        "title": "Where Was God in the Holocaust (II)",
-        "text": """Before you read this, you must read the article above entitled "Why Do Bad Things Happen to Good People."
-
-The Holocaust was the most atrocious and evil tragedy in human history. To make sense of it is to cheapen it — it can't be explained away as just another challenge, because the Holocaust was no challenge. It was pure destruction. There was no light at the end of the tunnel, no victory that mattered. The victims were completely helpless, completely innocent, and they were treated with the utmost brutality. Babies were gassed to death in their mothers' arms for no reason. Words can barely be uttered in the face of such a tragedy.
-
-If we can't make sense of it, how are we to approach it? We need an approach, because many get angry at God for this, and they may never forgive Him. This is bad, because if we let the Holocaust shatter our faith and sever our relationship with our Father in Heaven, then the tragedy of the Holocaust is doubled — another family is broken apart. The goal must be: if we can't understand, we must at least be able to connect — to find something within ourselves that lets us see eye to eye. That should at least begin the process of healing. And we must heal.
-
-To begin with, we need to know that we are made in God's image. He is infinitely bigger and stronger than us, but we are no different from God in our essentials. If we struggle with our evil inclination and sometimes lose control, He struggles with His evil inclination and sometimes loses control. When He loses control, the results are infinitely bigger and stronger.
-
-What does God do when He loses control? He has the deepest, most evil urge that is within us humans — the urge for self-harm and self-destruction. Yes, we all have this urge; in some it's just more revealed than in others. And God has it too, in far greater measure. He fights much harder than we do to keep it at bay.
-
-Is God a self-harmer, you might be asking — the Holocaust was an act of harm against others, not against Himself. And you would be wrong. God is everywhere, and He is fully invested in every space. He felt the Holocaust — He was the Holocaust. He did the Holocaust to Himself. And you can't ask why, because self-harm isn't active logic — it's active will, and pure desire.
-
-Does this answer our original question — where was God in the Holocaust? He was inside the gas chambers, gasping for air, climbing the walls. He was the bayonet stabbing a Jewish baby to death. He was the train. He was everyone in the train. He was starving. He was the Jews singing songs of redemption. He was all of it, inside and out. He felt it even more than they did — infinitely more.
-
-Some slash their own arm with a knife. They can certainly understand the urge for self-destruction — they understand there is no rationale, that it is pure will and pure desire. But what about the rest of us? Smokers understand it — smoking is an act of self-destruction, and smokers can't explain it, yet they do it. Either we, or someone we know, likes watching horror movies even though it will scare them — that is exactly what they want, and they pay for it. They pay eight bucks to be in pain. It's a will, a senseless desire for self-harm, and it comes from a dark place in our soul. You either have it, or you know someone who does — and the truth is, we all have it.
-
-Now realize: if we like to be scared and hurt sometimes, and we are made in God's image, He has the urge to be scared just as much. In fact His urge to self-harm is infinitely greater than ours, and His immunity is far greater than ours. So in order to make someone like God scared, it would take — well, it would take a Holocaust. The desire of God to destroy Himself and His loved ones can't be captured in words. Moses asked for an explanation.
-
-Instead of complaining to God, we should really be crying for Him — crying because we haven't been in His shoes, crying for His loss of control and His evil choice to undergo such an act of self-harm and self-destruction, the likes of which humanity has never seen — a choice He certainly regrets with all His being. We must be ready to forgive God, just as we must forgive ourselves for our self-harm, our horror-movie fetish, or other self-destructive behavior we undertake. He is our Father; we are His children; and we all have His vices. We are all one, struggling as one — and when one succeeds, it helps the other.
-
-Although we forgive God and cry for Him, He still owes us recompense. He still needs to make it up to all of us, and so far, nothing He has done has nearly made up for it. We are waiting, and God says: wait a little longer. He says: don't you see, I planted over 6 million seeds — seeds that have now disintegrated — and they will produce the most beautiful garden, greater than anything you've ever seen.
-
-We pray that God plans with more peaceful means in the future. May God never act on this desire again. May no self-harmer ever harm himself again. May we never indulge in self-destructive behavior again — and for that matter, may we no longer desire to be scared by horror movies. May we no longer desire to desire.""",
-    },
-    {
         "title": "The Akeidah Is for You",
         "text": """We all have our sticking points that hold us back from fully serving God, or our spouse, or any family member, fully.
 
@@ -165,13 +129,141 @@ You're thinking right now! That thought is more proof that a Creator who has tho
 ]
 
 
-def build_context_block() -> str:
-    """Render all knowledge chunks into one text block for the system message.
+_SECTION_RE = re.compile(r"^===\s*(.+?)\s*===\s*$", re.MULTILINE)
 
-    Modules are joined as raw first-person prose, not summarized or bulleted —
-    the full paragraphs are fed to the model as-is.
-    """
-    parts = []
-    for chunk in KNOWLEDGE_CHUNKS:
-        parts.append(f"### {chunk['title']}\n\n{chunk['text']}")
+
+def _load_master_doc_chunks() -> list:
+    """Parse otherlessons.txt (the master doc) into {title, text} chunks split
+    on '=== Title ===' markers. Returns [] if the file is missing so a
+    checkout without it doesn't crash the app — the curated KNOWLEDGE_CHUNKS
+    above still work fine on their own."""
+    path = os.path.join(get_base_dir(), "otherlessons.txt")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = f.read()
+    except OSError:
+        return []
+
+    parts = _SECTION_RE.split(raw)
+    # re.split with one capturing group returns:
+    # [text_before_first_marker, title1, body1, title2, body2, ...]
+    by_title = {}
+    for i in range(1, len(parts), 2):
+        title = parts[i].strip()
+        body = parts[i + 1].strip() if i + 1 < len(parts) else ""
+        if not title or not body:
+            continue
+        # The master doc occasionally has the same title twice (e.g. an
+        # earlier draft left in alongside a fuller rewrite) — keep whichever
+        # version is longer/more complete.
+        if title not in by_title or len(body) > len(by_title[title]):
+            by_title[title] = body
+    return [{"title": title, "text": body} for title, body in by_title.items()]
+
+
+def _merge_chunks(curated: list, master_doc: list) -> list:
+    """Combine the curated KNOWLEDGE_CHUNKS with the master doc's chunks.
+    When the same title exists in both, the master doc wins."""
+    by_title = {c["title"].strip().lower(): c for c in curated}
+    for c in master_doc:
+        by_title[c["title"].strip().lower()] = c
+    return list(by_title.values())
+
+
+MASTER_DOC_CHUNKS = _load_master_doc_chunks()
+ALL_CHUNKS = _merge_chunks(KNOWLEDGE_CHUNKS, MASTER_DOC_CHUNKS)
+
+TOP_K_CHUNKS = 4
+
+_WORD_RE = re.compile(r"[A-Za-z']+")
+_STOPWORDS = {
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "to", "of", "in", "on",
+    "at", "for", "and", "or", "but", "if", "so", "because", "as", "that", "this", "these", "those",
+    "it", "its", "i", "you", "he", "she", "they", "we", "my", "your", "his", "her", "their", "our",
+    "me", "him", "them", "us", "do", "does", "did", "not", "no", "yes", "what", "why", "how", "when",
+    "where", "who", "which", "with", "from", "by", "about", "into", "up", "down", "out", "over",
+    "under", "again", "further", "then", "once", "have", "has", "had", "can", "will", "would",
+    "could", "should", "just", "than", "too", "very", "there", "here", "some", "any", "all", "each",
+    "am", "get", "got", "like", "really", "also", "one", "way",
+}
+
+
+def _tokenize(text: str) -> list:
+    return [w.lower() for w in _WORD_RE.findall(text) if len(w) > 2 and w.lower() not in _STOPWORDS]
+
+
+def select_relevant_chunks(query: str, chunks: list, top_k: int = TOP_K_CHUNKS) -> list:
+    """Pick the top_k chunks most relevant to `query` using simple keyword
+    overlap weighted by rarity (a lightweight, dependency-free stand-in for
+    TF-IDF) — no embeddings or external API needed. Title matches count for
+    more than body matches.
+
+    A chunk only qualifies if it clears BOTH a relevance bar and a
+    confidence bar:
+      - score > 0 (some overlap exists), and
+      - either at least 2 distinct, non-generic query terms matched
+        somewhere in the chunk, or 1 term matched directly in the chunk's
+        title.
+    "Non-generic" excludes terms that show up in a large share of all
+    chunks (e.g. "question", "first", "learn") — words so common across
+    this specific corpus of teachings that matching on them carries no
+    real signal, the same way a stopword wouldn't. A title match is exempt
+    from that filter, since a title hit is already a strong, specific
+    signal on its own (e.g. a bare "yichud" query should still surface
+    "What Is a Yichud?" even though "yichud" itself is used everywhere in
+    the corpus). Without these two bars, a single incidental hit on a
+    common word was enough to pull an unrelated teaching in — which is
+    exactly the kind of false match that leads to answers that sound
+    plausible but aren't actually grounded in the source material. Returns
+    [] if nothing clears the bar: it's better to send no extra context
+    than to force irrelevant material into the prompt (see the
+    faithfulness rule in SYSTEM_PROMPT)."""
+    query_terms = Counter(_tokenize(query))
+    if not query_terms or not chunks:
+        return []
+
+    n_docs = len(chunks)
+    doc_freq = Counter()
+    doc_term_counts = []
+    for chunk in chunks:
+        title_terms = Counter(_tokenize(chunk["title"]))
+        body_terms = Counter(_tokenize(chunk["text"]))
+        doc_term_counts.append((title_terms, body_terms))
+        doc_freq.update(set(title_terms) | set(body_terms))
+
+    # Terms appearing in more than ~a third of all chunks are corpus-common
+    # (e.g. "question", "first") and don't count toward the distinct-match
+    # bar unless they're a title hit.
+    common_term_threshold = max(3, n_docs // 3)
+
+    scored = []
+    for chunk, (title_terms, body_terms) in zip(chunks, doc_term_counts):
+        score = 0.0
+        distinct_matches = 0
+        title_hit = False
+        for term in query_terms:
+            if term not in title_terms and term not in body_terms:
+                continue
+            is_title_hit = term in title_terms
+            if is_title_hit:
+                title_hit = True
+            if is_title_hit or doc_freq.get(term, 0) <= common_term_threshold:
+                distinct_matches += 1
+            idf = math.log((n_docs + 1) / (doc_freq.get(term, 0) + 1)) + 1.0
+            score += idf * (title_terms.get(term, 0) * 3 + body_terms.get(term, 0))
+        if score > 0 and (distinct_matches >= 2 or title_hit):
+            scored.append((score, chunk))
+
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+    return [chunk for _, chunk in scored[:top_k]]
+
+
+def build_context_block(query: str = "") -> str:
+    """Select the chunks most relevant to `query` from the full merged
+    knowledge base (curated pieces + the master doc) and render them for the
+    system message. Returns "" if nothing relevant is found."""
+    relevant = select_relevant_chunks(query, ALL_CHUNKS) if query else []
+    if not relevant:
+        return ""
+    parts = [f"### {chunk['title']}\n\n{chunk['text']}" for chunk in relevant]
     return "\n\n".join(parts)
