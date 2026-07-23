@@ -92,14 +92,15 @@ def limit_reached_response():
 NO_MATERIAL_INSTRUCTION = (
     "\n\n--- NO MATERIAL FOUND FOR THIS QUESTION ---\n\n"
     "You have nothing specific written on this exact topic anywhere in your knowledge "
-    "base. Do NOT answer it anyway using your usual voice and metaphors as if you had "
-    "spoken on this before — that would not be honest, even if it sounds plausible. "
-    "Instead, respond warmly but briefly: tell them honestly that you don't have a "
-    "real answer for this one yet, and that you'd be happy to look into it. Their "
-    "question has already been saved for a future update. Something close to: "
-    "\"I don't know — but I'd be happy to look into that for you. I've saved your "
-    "question, so next time you visit I may have a real answer.\" Do not follow that "
-    "with a fabricated teaching, story, or metaphor."
+    "base. Do NOT pretend otherwise — do not answer as if this were one of Rabbi "
+    "Pollen's actual stories, teachings, or metaphors, even if it would sound "
+    "plausible in his voice. But do NOT refuse to help either. Say so honestly and "
+    "briefly first, something close to: \"I don't have a specific teaching from Rabbi "
+    "Pollen on this one — but here's what I know:\" — and then go ahead and actually "
+    "answer the question well, using your own general knowledge and reasoning. Keep "
+    "the warmth and first-person honesty of your voice throughout. Their question has "
+    "already been saved so Rabbi Pollen can add a real, specific answer in a future "
+    "update — but that's in addition to helping them now, not instead of it."
 )
 
 
@@ -113,14 +114,15 @@ def build_system_content(query: str = ""):
     knowledge.select_relevant_chunks) instead of sending the entire
     knowledge base (curated pieces + the master doc) on every request.
 
-    When nothing relevant is found, two things happen instead of silently
-    letting the model improvise a plausible-sounding but ungrounded answer:
-    the question gets logged via teachings_store.log_unanswered_question so
-    it shows up in the /teach wizard for a real answer later, and a strong,
-    late-positioned instruction is appended telling the model to say so
-    honestly rather than freelancing in Rabbi Pollen's voice on a topic he
-    hasn't actually addressed. It's appended last (after the teachings
-    block) because later instructions tend to carry more weight."""
+    When nothing relevant is found, two things happen: the question gets
+    logged via teachings_store.log_unanswered_question so it shows up in
+    the /teach wizard for a real, specific answer later, and a late-
+    positioned instruction is appended telling the model to disclose
+    honestly that this isn't one of Rabbi Pollen's specific teachings and
+    then go ahead and actually answer using its own general knowledge —
+    still helpful, just not misattributed to material that doesn't exist.
+    It's appended last (after the teachings block) because later
+    instructions tend to carry more weight."""
     parts = [SYSTEM_PROMPT]
     context = build_context_block(query)
     if context:
