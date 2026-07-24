@@ -444,6 +444,13 @@ const CONTEXT_WINDOW = 10;
 
 const STORAGE_KEY = 'emesgpt_conversation_v1';
 
+// Tracks whether the one-time donation note has ever been shown in this
+// browser. Separate from the conversation array (and never cleared by
+// "Clear history") so it truly only fires once per visitor, ever — even if
+// their message count was already past 5 before this feature shipped, or
+// they clear their chat and start again later.
+const DONATION_SHOWN_KEY = 'emesgpt_donation_shown_v1';
+
 // Each entry: { role: 'user'|'assistant', content: string, meta?: string }
 let conversation = loadConversation();
 
@@ -704,11 +711,12 @@ setStatus('');
 setLoading(true);
 renderTyping();
 
-// One-time donation nudge: fires only when this send is exactly the
-// user's 5th message in the conversation (counted from the persisted
-// history, so it survives reloads and never repeats on later turns).
+// One-time donation nudge: fires the first time this send brings the
+// user's total message count to 5 or more (not exactly 5 — a visitor whose
+// stored history already passed 5 before this feature shipped should still
+// see it once), and never again afterward thanks to DONATION_SHOWN_KEY.
 const userMessageCount = conversation.filter((m) => m.role === 'user').length;
-const showDonationNote = userMessageCount === 5;
+const showDonationNote = userMessageCount >= 5 && localStorage.getItem(DONATION_SHOWN_KEY) !== '1';
 
 // Cost control: only send the last CONTEXT_WINDOW messages as context,
 // not the full history. The full history stays local (localStorage) and
@@ -796,6 +804,10 @@ throw new Error('No response received.');
 
 if (showDonationNote) {
 accumulated += '\n\n' + DONATION_MESSAGE_MD;
+try { localStorage.setItem(DONATION_SHOWN_KEY, '1'); } catch {
+// If localStorage is unavailable the note may show again next time —
+// acceptable fallback, same limitation the rest of the app already has.
+}
 }
 
 conversation.push({ role: 'assistant', content: accumulated, meta: (finalData && finalData.source_note) || null });
