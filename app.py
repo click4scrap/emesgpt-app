@@ -317,6 +317,21 @@ def call_deepseek_stream(messages: list):
         raise RuntimeError("DeepSeek returned an empty response.")
 
 
+@app.after_request
+def add_no_cache_headers(response):
+    """The HTML pages here change often (new features, copy tweaks) and are
+    small/cheap to regenerate, so there's no benefit to letting browsers or
+    intermediate proxies cache them — and real harm: a visitor's browser
+    holding onto a stale copy of index.html means they silently miss every
+    later feature/fix, with no error to tip them (or us) off. Force
+    revalidation on every navigation. Static assets aren't served from this
+    app (marked.min.js etc. come from a CDN), so this is safe to apply
+    blanket rather than route-by-route."""
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -427,8 +442,6 @@ def teach_suggest_followup():
     if err:
         body, status = err
         return jsonify(body), status
-
-    return jsonify({"question": suggestion.strip()})
 
 
 @app.route("/api/usage", methods=["GET"])
