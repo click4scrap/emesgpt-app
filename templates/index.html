@@ -135,12 +135,33 @@ background: var(--navy-900);
 border: 1px solid var(--navy-700);
 border-bottom-left-radius: 3px;
 }
+.msg-actions {
+display: flex;
+align-items: center;
+gap: 8px;
+margin-top: 4px;
+}
 .msg .meta {
 font-size: 11px;
 color: var(--muted);
-margin-top: 4px;
 font-style: italic;
 }
+.copy-btn {
+background: transparent;
+border: none;
+cursor: pointer;
+padding: 3px;
+color: var(--muted);
+display: inline-flex;
+align-items: center;
+justify-content: center;
+border-radius: 5px;
+opacity: 0.6;
+transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.copy-btn:hover { opacity: 1; color: var(--gold-bright); background: var(--navy-800); }
+.copy-btn svg { width: 14px; height: 14px; display: block; }
+.copy-btn.copied { color: var(--gold-bright); opacity: 1; }
 .msg.dimmed .bubble { opacity: 0.5; }
 
 .window-divider {
@@ -449,6 +470,48 @@ function scrollToBottom() {
 chatScroll.scrollTop = chatScroll.scrollHeight;
 }
 
+// Small clipboard / checkmark icons (inline SVG, inherit currentColor so
+// they follow the button's color/hover state without extra image assets).
+const COPY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+const CHECK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+
+// Textarea+execCommand fallback for browsers/contexts where
+// navigator.clipboard isn't available (e.g. non-HTTPS or older browsers).
+function fallbackCopy(text, onDone) {
+const ta = document.createElement('textarea');
+ta.value = text;
+ta.style.position = 'fixed';
+ta.style.top = '-1000px';
+ta.style.opacity = '0';
+document.body.appendChild(ta);
+ta.focus();
+ta.select();
+try { document.execCommand('copy'); } catch {
+// Nothing more we can do here — clipboard access just isn't available.
+}
+document.body.removeChild(ta);
+onDone();
+}
+
+// Copies the raw (unrendered) text of a message and briefly swaps the
+// button's icon to a checkmark so the click has visible feedback.
+function copyMessageText(text, btn) {
+const showCopied = () => {
+const original = btn.innerHTML;
+btn.classList.add('copied');
+btn.innerHTML = CHECK_ICON;
+setTimeout(() => {
+btn.innerHTML = original;
+btn.classList.remove('copied');
+}, 1400);
+};
+if (navigator.clipboard && navigator.clipboard.writeText) {
+navigator.clipboard.writeText(text).then(showCopied).catch(() => fallbackCopy(text, showCopied));
+} else {
+fallbackCopy(text, showCopied);
+}
+}
+
 function renderMessage(role, content, meta, dimmed) {
 const wrap = document.createElement('div');
 wrap.className = `msg ${role}` + (dimmed ? ' dimmed' : '');
@@ -460,12 +523,29 @@ bubble.innerHTML = marked.parse(content);
 bubble.textContent = content;
 }
 wrap.appendChild(bubble);
+
+// Copy icon + optional meta note, shown under every message so any
+// message — user or assistant — can be copied with one click.
+const actions = document.createElement('div');
+actions.className = 'msg-actions';
+
+const copyBtn = document.createElement('button');
+copyBtn.type = 'button';
+copyBtn.className = 'copy-btn';
+copyBtn.title = 'Copy message';
+copyBtn.setAttribute('aria-label', 'Copy message');
+copyBtn.innerHTML = COPY_ICON;
+copyBtn.addEventListener('click', () => copyMessageText(content, copyBtn));
+actions.appendChild(copyBtn);
+
 if (meta) {
-const metaEl = document.createElement('div');
+const metaEl = document.createElement('span');
 metaEl.className = 'meta';
 metaEl.textContent = meta;
-wrap.appendChild(metaEl);
+actions.appendChild(metaEl);
 }
+wrap.appendChild(actions);
+
 chatScroll.appendChild(wrap);
 return wrap;
 }
@@ -522,7 +602,7 @@ if (el) el.remove();
 // of renderAll()/the conversation array until the stream finishes, at
 // which point sendMessage() pushes the final text into `conversation` and
 // a normal renderAll() takes over, swapping this DOM node for the
-// properly-rendered final one.
+// properly-rendered final one (copy icon included).
 function renderStreamingMessage() {
 const wrap = document.createElement('div');
 wrap.className = 'msg assistant';
