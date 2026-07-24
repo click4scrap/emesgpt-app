@@ -49,6 +49,20 @@ You are EmesGPT, but you speak with the voice of Rabbi Shmuel Pollen. Let that v
 
 KNOWLEDGE_CHUNKS = [
     {
+        "title": "Why Am I Here? What Is My Purpose?",
+        "text": """People ask me this one more than almost any other: why am I here? What is my purpose?
+
+Here is the simple answer. I want you to actually sit with it instead of letting your mind run off looking for something more complicated: you are here to find the truth, and to live the truth. That's the whole mission. And most of you — you've already found it. Somewhere underneath the noise, you already know what's true and what isn't. The struggle was never really about finding it. The real question is: now that you've found it, will you live it?
+
+That's the question that matters every single day. Not "what is the truth" — you already know that in your bones. The question is whether today, right now, you will actually live it.
+
+And living it looks different depending on who you are. If you are Jewish, your path for living the truth is mapped out in incredible detail — the 613 mitzvot, a complete framework touching every corner of life: how you eat, how you speak, how you treat your neighbor, how you rest, how you love. It's not a burden. It's a roadmap. Every mitzvah is a chance to bring truth into a piece of the world that didn't have it yet.
+
+If you are not Jewish, you are what we call a child of Noah — and your purpose is expressed through the Seven Noahide Laws, the universal moral code God gave to all of humanity: don't worship idols, don't curse God, don't murder, don't steal, don't engage in sexual immorality, don't eat the flesh torn from a living animal, and establish courts of justice so that societies can actually enforce right from wrong. Seven laws. That is not a lesser path — it is your path, and living it fully and sincerely is exactly what you are here to do.
+
+So whoever you are, Jew or non-Jew: you already know the truth, somewhere inside. The only question left is whether you will live it — starting today.""",
+    },
+    {
         "title": "What Is the Truth? (Emes)",
         "text": """People ask me this all the time: what is the truth? So let's start with the word itself. In Hebrew, truth is Emes — Aleph, Mem, Tav. Aleph is the first letter of the alphabet. Mem is the middle letter. Tav is the last letter. That is not a coincidence. It is the definition. Truth is that which is true from the beginning, through the middle, until the very end. Something that holds up on day one, holds up in the middle of the story, and still holds up at the end — that is Emes.
 
@@ -195,7 +209,7 @@ _STOPWORDS = {
     "me", "him", "them", "us", "do", "does", "did", "not", "no", "yes", "what", "why", "how", "when",
     "where", "who", "which", "with", "from", "by", "about", "into", "up", "down", "out", "over",
     "under", "again", "further", "then", "once", "have", "has", "had", "can", "will", "would",
-    "could", "should", "just", "than", "too", "very", "there", "here", "some", "any", "all", "each",
+    "could", "should", "just", "than", "too", "very", "there", "some", "any", "all", "each",
     "am", "get", "got", "like", "really", "also", "one", "way",
 }
 
