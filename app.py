@@ -15,6 +15,7 @@ from youtube_transcript_api._errors import (
 )
 from knowledge import SYSTEM_PROMPT, build_context_block
 import teachings as teachings_store
+import prompt_log
 from runtime_paths import get_base_dir
 
 # Explicit path, not just load_dotenv()'s default cwd-search: when packaged
@@ -93,15 +94,15 @@ def limit_reached_response():
 NO_MATERIAL_INSTRUCTION = (
     "\n\n--- NO MATERIAL FOUND FOR THIS QUESTION ---\n\n"
     "You have nothing specific written on this exact topic anywhere in your knowledge "
-    "base. Do NOT pretend otherwise — do not answer as if this were one of Rabbi "
-    "Pollen's actual stories, teachings, or metaphors, even if it would sound "
-    "plausible in his voice. But do NOT refuse to help either. Say so honestly and "
-    "briefly first, something close to: \"I don't have a specific teaching from Rabbi "
-    "Pollen on this one — but here's what I know:\" — and then go ahead and actually "
-    "answer the question well, using your own general knowledge and reasoning. Keep "
-    "the warmth and first-person honesty of your voice throughout. Their question has "
-    "already been saved so Rabbi Pollen can add a real, specific answer in a future "
-    "update — but that's in addition to helping them now, not instead of it."
+    "base. Do NOT pretend otherwise — do not answer as if this were one of your own "
+    "actual stories, teachings, or metaphors, even if it would sound plausible in "
+    "your voice. But do NOT refuse to help either. Say so honestly and briefly "
+    "first, something close to: \"I haven't heard the answer to this one — but "
+    "here's the general info I have:\" — and then go ahead and actually answer the "
+    "question well, using your own general knowledge and reasoning. Keep the warmth "
+    "and first-person honesty of your voice throughout. Their question has already "
+    "been saved so a real, specific answer can be added in a future update — but "
+    "that's in addition to helping them now, not instead of it."
 )
 
 
@@ -119,11 +120,11 @@ def build_system_content(query: str = ""):
     logged via teachings_store.log_unanswered_question so it shows up in
     the /teach wizard for a real, specific answer later, and a late-
     positioned instruction is appended telling the model to disclose
-    honestly that this isn't one of Rabbi Pollen's specific teachings and
-    then go ahead and actually answer using its own general knowledge —
-    still helpful, just not misattributed to material that doesn't exist.
-    It's appended last (after the teachings block) because later
-    instructions tend to carry more weight."""
+    honestly that this isn't one of its own specific teachings and then go
+    ahead and actually answer using its own general knowledge — still
+    helpful, just not misattributed to material that doesn't exist. It's
+    appended last (after the teachings block) because later instructions
+    tend to carry more weight."""
     parts = [SYSTEM_PROMPT]
     context = build_context_block(query)
     if context:
@@ -326,6 +327,17 @@ def teach_page():
     return render_template("teach.html")
 
 
+@app.route("/prompts")
+def prompts_page():
+    """Simple read-only log of the first message of every conversation
+    started on this server, newest first. Free to run — no extra API calls,
+    just reading a small JSON file — useful for seeing what real visitors
+    are actually asking about, at a glance, without reading full
+    conversations."""
+    entries = prompt_log.load_first_prompts()
+    return render_template("prompts.html", entries=list(reversed(entries)))
+
+
 @app.route("/api/teach/questions", methods=["GET"])
 def teach_questions():
     """Prewritten questions merged with whatever's already been answered
@@ -505,6 +517,12 @@ def chat():
     for msg in history:
         if not isinstance(msg, dict) or msg.get("role") not in ("user", "assistant") or "content" not in msg:
             return jsonify({"error": "Malformed message in conversation history."}), 400
+
+    # Log just the very first prompt of a brand-new conversation (a running
+    # log of what real visitors are opening with, not a full transcript).
+    # Cheap: one small JSON file append, no extra API calls.
+    if len(history) == 1:
+        prompt_log.log_first_prompt(last.get("content"))
 
     resolved_text, source_note, err = resolve_user_text(last.get("content"))
     if err:
