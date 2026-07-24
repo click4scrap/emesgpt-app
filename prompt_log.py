@@ -22,7 +22,7 @@ PROMPT_LOG_FILE = os.path.join(get_base_dir(), "prompt_log.json")
 
 MAX_ENTRIES = 1000
 
-_lock = threading.Lock()
+_lock = threading.RLock()
 
 
 def _now_iso():
