@@ -386,6 +386,11 @@ const WARN_CHARS = 12000;
 const MAX_CHARS = 50000;
 const DEFAULT_PLACEHOLDER = inputText.placeholder;
 
+// Shown exactly once, appended to the end of EmesGPT's reply right after the
+// user's 5th message in a conversation (see sendMessage). Markdown link
+// syntax so marked.parse() renders "Donate" as a real clickable <a>.
+const DONATION_MESSAGE_MD = 'You\'ve asked some deep questions. I love that. If EmesGPT has helped you, please consider helping us keep the "light" on. We\'re working toward a goal: when we reach enough support, we\'ll unlock unlimited messages for everyone. Your help gets us closer. [Donate](https://buymeacoffee.com/emesgpt)';
+
 // Server-side hard cap on Groq calls for this run of the server (see
 // MESSAGE_LIMIT in app.py). Mirrored here just for display / to avoid a
 // wasted round trip once we already know we're at the cap — the backend is
@@ -699,6 +704,12 @@ setStatus('');
 setLoading(true);
 renderTyping();
 
+// One-time donation nudge: fires only when this send is exactly the
+// user's 5th message in the conversation (counted from the persisted
+// history, so it survives reloads and never repeats on later turns).
+const userMessageCount = conversation.filter((m) => m.role === 'user').length;
+const showDonationNote = userMessageCount === 5;
+
 // Cost control: only send the last CONTEXT_WINDOW messages as context,
 // not the full history. The full history stays local (localStorage) and
 // visible in the UI regardless.
@@ -781,6 +792,10 @@ conversation.pop();
 saveConversation();
 renderAll();
 throw new Error('No response received.');
+}
+
+if (showDonationNote) {
+accumulated += '\n\n' + DONATION_MESSAGE_MD;
 }
 
 conversation.push({ role: 'assistant', content: accumulated, meta: (finalData && finalData.source_note) || null });
